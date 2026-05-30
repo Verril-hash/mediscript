@@ -461,6 +461,83 @@ export default function App() {
     window.speechSynthesis.speak(utterance);
   };
 
+  // PDF export via browser print
+  const handleSavePDF = () => {
+    const rx = prescriptions.find((p) => p.id === selectedRxId) || prescriptions[0];
+    const lang = activeLanguage;
+    const langLabel = lang === 'hi' ? 'Hindi' : lang === 'kn' ? 'Kannada' : 'English';
+
+    const rows = rx.medications.map((med, idx) => {
+      const d = med.translations[lang];
+      return `
+        <tr>
+          <td>${idx + 1}. <strong>${med.name}</strong></td>
+          <td>${d.purpose}</td>
+          <td>${d.dosage}</td>
+          <td>${d.duration}</td>
+          <td>${d.interactionWarning || '—'}</td>
+        </tr>`;
+    }).join('');
+
+    const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <title>MediScript Report — ${rx.patient}</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: Inter, sans-serif; color: #111; padding: 40px; font-size: 13px; }
+    .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #8E6878; padding-bottom: 16px; margin-bottom: 24px; }
+    .brand { font-size: 22px; font-weight: 700; color: #8E6878; letter-spacing: -0.5px; }
+    .brand span { font-size: 11px; font-weight: 400; color: #888; display: block; margin-top: 2px; }
+    .meta { text-align: right; font-size: 12px; color: #555; line-height: 1.7; }
+    table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+    th { background: #8E6878; color: white; text-align: left; padding: 9px 12px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
+    td { padding: 9px 12px; border-bottom: 1px solid #eee; vertical-align: top; line-height: 1.5; }
+    tr:nth-child(even) td { background: #fafafa; }
+    .footer { margin-top: 32px; padding-top: 14px; border-top: 1px solid #ddd; font-size: 11px; color: #999; display: flex; justify-content: space-between; }
+    @media print { body { padding: 24px; } }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div>
+      <div class="brand">MediScript<span>AI Prescription Decoder</span></div>
+    </div>
+    <div class="meta">
+      <strong>${rx.clinic}</strong><br/>
+      Patient: ${rx.patient}${rx.date ? '<br/>Date: ' + rx.date : ''}<br/>
+      Language: ${langLabel}
+    </div>
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th>Medicine</th><th>Purpose</th><th>Dosage</th><th>Duration</th><th>Warnings</th>
+      </tr>
+    </thead>
+    <tbody>${rows}</tbody>
+  </table>
+  <div class="footer">
+    <span>This report is for informational purposes only. Always follow your doctor's instructions.</span>
+    <span>mediscript.vercel.app</span>
+  </div>
+</body>
+</html>`;
+
+    const win = window.open('', '_blank');
+    if (!win) {
+      triggerToast('Allow pop-ups to save the PDF.', 'info');
+      return;
+    }
+    win.document.write(html);
+    win.document.close();
+    win.focus();
+    setTimeout(() => { win.print(); }, 600);
+    triggerToast('Print dialog opened — save as PDF.', 'success');
+  };
+
   // WhatsApp share
   const handleShareResult = () => {
     const rx = prescriptions.find((p) => p.id === selectedRxId) || prescriptions[0];
@@ -1893,9 +1970,7 @@ export default function App() {
                 <Share2 size={15} /> Share on WhatsApp
               </button>
               <button
-                onClick={() => {
-                  triggerToast('Generating clinical PDF report...', 'success');
-                }}
+                onClick={handleSavePDF}
                 className="flex-1 bg-white dark:bg-[#121216]/50 border border-neutral-200 dark:border-white/[0.05] text-neutral-700 dark:text-neutral-300 font-extrabold text-[12px] sm:text-[13px] py-3.5 sm:py-4 rounded-full hover:bg-neutral-50 dark:hover:bg-neutral-800 active:scale-95 transition-all flex items-center justify-center gap-2 uppercase tracking-wider"
               >
                 <ArrowUpRight size={15} /> Save report PDF
