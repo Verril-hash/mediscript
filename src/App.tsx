@@ -466,20 +466,29 @@ export default function App() {
     const rx = prescriptions.find((p) => p.id === selectedRxId) || prescriptions[0];
     const lang = activeLanguage;
 
-    let shareText = `📝 *MediScript Decoded Prescription*\n`;
-    shareText += `🏥 *Clinic:* ${rx.clinic}\n`;
-    shareText += `👤 *Patient:* ${rx.patient}\n\n`;
+    const date = rx.date ? `  Date: ${rx.date}\n` : '';
+    let shareText = `*MEDISCRIPT — Prescription Breakdown*\n`;
+    shareText += `${'─'.repeat(32)}\n`;
+    shareText += `  Clinic:   ${rx.clinic}\n`;
+    shareText += `  Patient:  ${rx.patient}\n`;
+    shareText += date;
+    shareText += `${'─'.repeat(32)}\n\n`;
 
     rx.medications.forEach((med, idx) => {
       const details = med.translations[lang];
-      shareText += `💊 *${idx + 1}. ${med.name}*\n`;
-      shareText += `👉 *Purpose:* ${details.purpose}\n`;
-      shareText += `🕒 *Dosage:* ${details.dosage}\n`;
-      shareText += `⏳ *Duration:* ${details.duration}\n\n`;
+      shareText += `*${idx + 1}. ${med.name.toUpperCase()}*\n`;
+      shareText += `  Purpose:  ${details.purpose}\n`;
+      shareText += `  Dosage:   ${details.dosage}\n`;
+      shareText += `  Duration: ${details.duration}\n`;
+      if (details.interactionWarning) {
+        shareText += `  Note:     ${details.interactionWarning}\n`;
+      }
+      shareText += `\n`;
     });
 
-    shareText += `⚠️ _Informational only. Consult a doctor for medical advice._\n`;
-    shareText += `\n🔗 Decoded by MediScript`;
+    shareText += `${'─'.repeat(32)}\n`;
+    shareText += `_This is an AI-decoded summary for informational purposes only. Always follow your doctor's instructions._\n\n`;
+    shareText += `Decoded by MediScript · mediscript.vercel.app`;
 
     const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(shareText)}`;
     window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
