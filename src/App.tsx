@@ -489,13 +489,11 @@ export default function App() {
 
       {/* Toast Notifications */}
       {toastMessage && (
-        <div className="fixed top-3 right-3 sm:top-5 sm:right-5 z-50 pointer-events-auto py-3 px-4 rounded-xl shadow-lg flex items-center gap-3 animate-toast border bg-white/95 dark:bg-[#141414]/95 backdrop-blur-lg text-neutral-800 dark:text-neutral-100 border-black/[0.06] dark:border-white/[0.08] max-w-[calc(100vw-1.5rem)] sm:max-w-xs w-full">
-          {toastType === 'success' ? (
-            <CheckCircle2 size={16} className="text-[#16A34A] shrink-0" />
-          ) : (
-            <Sparkles size={16} className="text-[#8E6878] shrink-0" />
-          )}
-          <span className="text-[13px] font-semibold">{toastMessage}</span>
+        <div className="fixed bottom-5 left-1/2 -translate-x-1/2 sm:bottom-auto sm:top-20 sm:right-4 sm:left-auto sm:translate-x-0 z-[200] pointer-events-none">
+          <div className="py-2.5 px-4 rounded-xl shadow-xl flex items-center gap-2 bg-[#111111] dark:bg-[#EDEDED] text-white dark:text-[#111111] text-[12.5px] font-semibold whitespace-nowrap max-w-[90vw] sm:max-w-xs">
+            <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${toastType === 'success' ? 'bg-[#10B981]' : 'bg-[#8E6878]'}`} />
+            <span className="truncate">{toastMessage}</span>
+          </div>
         </div>
       )}
 
@@ -1782,22 +1780,9 @@ export default function App() {
                           </h4>
                           <span className="text-[10px] font-extrabold text-neutral-400 uppercase tracking-widest">Decoded Medicine</span>
                         </div>
-                        <div className="flex items-center gap-2 shrink-0">
-                          <span className="text-[10.5px] font-medium text-neutral-400 dark:text-neutral-500">
-                            {med.confidence}% match
-                          </span>
-                          <button
-                            onClick={() => speakMedicine(med, activeLanguage)}
-                            title={speakingMedId === med.id ? 'Stop' : 'Listen'}
-                            className={`p-1.5 rounded-full transition-all ${
-                              speakingMedId === med.id
-                                ? 'bg-[#8E6878]/15 text-[#8E6878] animate-pulse'
-                                : 'text-neutral-400 hover:text-[#8E6878] hover:bg-[#8E6878]/10'
-                            }`}
-                          >
-                            {speakingMedId === med.id ? <VolumeX size={14} /> : <Volume2 size={14} />}
-                          </button>
-                        </div>
+                        <span className="text-[10.5px] font-medium text-neutral-400 dark:text-neutral-500 shrink-0">
+                          {med.confidence}% match
+                        </span>
                       </div>
 
                       <div className="w-12 h-px bg-neutral-100 dark:bg-neutral-800" />
@@ -1852,6 +1837,20 @@ export default function App() {
                           {translation.interactionWarning}
                         </p>
                       </div>
+
+                      {/* Voice Readout — prominent listen button */}
+                      <button
+                        onClick={() => speakMedicine(med, activeLanguage)}
+                        className={`w-full flex items-center justify-center gap-2 py-2.5 rounded-xl font-extrabold text-[12px] uppercase tracking-wider transition-all active:scale-95 ${
+                          speakingMedId === med.id
+                            ? 'bg-[#8E6878] text-white shadow-md shadow-[#8E6878]/25 animate-pulse'
+                            : 'bg-[#8E6878]/10 dark:bg-[#8E6878]/15 text-[#8E6878] hover:bg-[#8E6878]/20 border border-[#8E6878]/20'
+                        }`}
+                      >
+                        {speakingMedId === med.id
+                          ? <><VolumeX size={14} /> {activeLanguage === 'hi' ? 'रोकें' : activeLanguage === 'kn' ? 'ನಿಲ್ಲಿಸಿ' : 'Stop'}</>
+                          : <><Volume2 size={14} /> {activeLanguage === 'hi' ? 'हिंदी में सुनें' : activeLanguage === 'kn' ? 'ಕನ್ನಡದಲ್ಲಿ ಕೇಳಿ' : 'Listen in English'}</>}
+                      </button>
                     </div>
                   </div>
                 );
