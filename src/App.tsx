@@ -3,7 +3,7 @@ import {
   CheckCircle2, Sparkles, Clock, UploadCloud,
   AlertCircle, Sun, Moon, ArrowUpRight, Camera, Share2,
   User, AlertTriangle, RefreshCw, MousePointer,
-  Shield, Globe, Menu, X, Volume2, VolumeX
+  Shield, Globe, Menu, X, Volume2, VolumeX, Bell
 } from 'lucide-react';
 
 type Page = 'landing' | 'upload' | 'results' | 'features' | 'how-it-works' | 'about';
@@ -211,6 +211,14 @@ export default function App() {
 
   // Voice readout state
   const [speakingMedId, setSpeakingMedId] = useState<string | null>(null);
+
+  // Ask AI state
+  const [askQuery, setAskQuery] = useState('');
+  const [askAnswer, setAskAnswer] = useState<string | null>(null);
+  const [isAsking, setIsAsking] = useState(false);
+
+  // Remind Me state: medId -> scheduled time label
+  const [reminders, setReminders] = useState<Record<string, string>>({});
 
   // Real camera refs
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -536,6 +544,63 @@ export default function App() {
     win.focus();
     setTimeout(() => { win.print(); }, 600);
     triggerToast('Print dialog opened — save as PDF.', 'success');
+  };
+
+  // Ask AI
+  const handleAskAI = async () => {
+    if (!askQuery.trim()) return;
+    setIsAsking(true);
+    setAskAnswer(null);
+    const rx = prescriptions.find((p) => p.id === selectedRxId) || prescriptions[0];
+    const lang = activeLanguage;
+    const context = rx.medications.map((m) => {
+      const d = m.translations[lang];
+      return `${m.name}: ${d.purpose}. Dosage: ${d.dosage}. Duration: ${d.duration}. Warning: ${d.interactionWarning}`;
+    }).join('\n');
+    try {
+      const res = await fetch('/api/ask', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question: askQuery, context }),
+      });
+      const data = await res.json();
+      setAskAnswer(data.answer || 'Sorry, could not get an answer.');
+    } catch {
+      setAskAnswer('Network error. Please try again.');
+    } finally {
+      setIsAsking(false);
+    }
+  };
+
+  // Remind Me
+  const handleRemindMe = (med: Medication, hoursFromNow: number) => {
+    if (!('Notification' in window)) {
+      triggerToast('Notifications not supported in this browser.', 'info');
+      return;
+    }
+    const scheduleNotification = () => {
+      const label = hoursFromNow < 1
+        ? `${hoursFromNow * 60} min`
+        : `${hoursFromNow}h`;
+      setTimeout(() => {
+        new Notification('MediScript Reminder 💊', {
+          body: `Time to take ${med.name} — ${med.translations['en'].dosage}`,
+          icon: '/logo.jpeg',
+        });
+      }, hoursFromNow * 60 * 60 * 1000);
+      setReminders((r) => ({ ...r, [med.id]: `In ${label}` }));
+      triggerToast(`Reminder set for ${med.name} in ${label}`, 'success');
+    };
+    if (Notification.permission === 'granted') {
+      scheduleNotification();
+    } else if (Notification.permission !== 'denied') {
+      Notification.requestPermission().then((perm) => {
+        if (perm === 'granted') scheduleNotification();
+        else triggerToast('Please allow notifications to set reminders.', 'info');
+      });
+    } else {
+      triggerToast('Notifications blocked. Enable them in browser settings.', 'info');
+    }
   };
 
   // WhatsApp share
@@ -1943,22 +2008,69 @@ export default function App() {
                       </div>
 
                       {/* Voice Readout — prominent listen button */}
-                      <button
-                        onClick={() => speakMedicine(med, activeLanguage)}
-                        className={`w-full flex items-center justify-center gap-2 py-2.5 rounded-xl font-extrabold text-[12px] uppercase tracking-wider transition-all active:scale-95 ${
-                          speakingMedId === med.id
-                            ? 'bg-[#8E6878] text-white shadow-md shadow-[#8E6878]/25 animate-pulse'
-                            : 'bg-[#8E6878]/10 dark:bg-[#8E6878]/15 text-[#8E6878] hover:bg-[#8E6878]/20 border border-[#8E6878]/20'
-                        }`}
-                      >
-                        {speakingMedId === med.id
-                          ? <><VolumeX size={14} /> {activeLanguage === 'hi' ? 'रोकें' : activeLanguage === 'kn' ? 'ನಿಲ್ಲಿಸಿ' : 'Stop'}</>
-                          : <><Volume2 size={14} /> {activeLanguage === 'hi' ? 'हिंदी में सुनें' : activeLanguage === 'kn' ? 'ಕನ್ನಡದಲ್ಲಿ ಕೇಳಿ' : 'Listen in English'}</>}
-                      </button>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => speakMedicine(med, activeLanguage)}
+                          className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl font-extrabold text-[12px] uppercase tracking-wider transition-all active:scale-95 ${
+                            speakingMedId === med.id
+                              ? 'bg-[#8E6878] text-white shadow-md shadow-[#8E6878]/25 animate-pulse'
+                              : 'bg-[#8E6878]/10 dark:bg-[#8E6878]/15 text-[#8E6878] hover:bg-[#8E6878]/20 border border-[#8E6878]/20'
+                          }`}
+                        >
+                          {speakingMedId === med.id
+                            ? <><VolumeX size={14} /> {activeLanguage === 'hi' ? 'रोकें' : activeLanguage === 'kn' ? 'ನಿಲ್ಲಿಸಿ' : 'Stop'}</>
+                            : <><Volume2 size={14} /> {activeLanguage === 'hi' ? 'हिंदी में सुनें' : activeLanguage === 'kn' ? 'ಕನ್ನಡದಲ್ಲಿ ಕೇಳಿ' : 'Listen'}</>}
+                        </button>
+                        <button
+                          onClick={() => {
+                            const hours = window.prompt(`Set reminder for ${med.name}\nIn how many hours? (e.g. 1, 4, 8)`);
+                            const n = parseFloat(hours || '');
+                            if (!isNaN(n) && n > 0) handleRemindMe(med, n);
+                          }}
+                          className={`flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-xl font-extrabold text-[11px] uppercase tracking-wider transition-all active:scale-95 border ${
+                            reminders[med.id]
+                              ? 'bg-green-50 dark:bg-green-900/20 text-green-600 border-green-200 dark:border-green-700/30'
+                              : 'bg-neutral-50 dark:bg-neutral-800/40 text-neutral-500 border-neutral-200 dark:border-white/[0.06] hover:border-[#8E6878]/30 hover:text-[#8E6878]'
+                          }`}
+                        >
+                          <Bell size={13} />
+                          {reminders[med.id] ? reminders[med.id] : 'Remind'}
+                        </button>
+                      </div>
                     </div>
                   </div>
                 );
               })}
+            </div>
+
+            {/* Ask AI */}
+            <div className="rounded-2xl border border-[#8E6878]/20 dark:border-[#8E6878]/15 bg-[#8E6878]/[0.04] dark:bg-[#8E6878]/[0.06] p-4 sm:p-5 space-y-3">
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] font-extrabold text-[#8E6878] uppercase tracking-widest">Ask AI</span>
+                <span className="text-[10px] text-neutral-400">— ask anything about this prescription</span>
+              </div>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={askQuery}
+                  onChange={(e) => setAskQuery(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleAskAI()}
+                  placeholder={activeLanguage === 'hi' ? 'जैसे: क्या मैं इसे खाली पेट ले सकता हूँ?' : activeLanguage === 'kn' ? 'ಉದಾ: ಇದನ್ನು ಖಾಲಿ ಹೊಟ್ಟೆಯಲ್ಲಿ ತೆಗೆದುಕೊಳ್ಳಬಹುದೇ?' : 'e.g. Can I take this on an empty stomach?'}
+                  className="flex-1 text-[12px] px-3.5 py-2.5 rounded-xl border border-neutral-200 dark:border-white/[0.07] bg-white dark:bg-neutral-900 text-neutral-800 dark:text-neutral-200 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-[#8E6878]/30"
+                />
+                <button
+                  onClick={handleAskAI}
+                  disabled={isAsking || !askQuery.trim()}
+                  className="px-4 py-2.5 rounded-xl bg-[#8E6878] text-white font-extrabold text-[11px] uppercase tracking-wider disabled:opacity-50 active:scale-95 transition-all whitespace-nowrap"
+                >
+                  {isAsking ? '...' : 'Ask'}
+                </button>
+              </div>
+              {askAnswer && (
+                <div className="text-[12px] text-neutral-700 dark:text-neutral-300 leading-relaxed p-3 rounded-xl bg-white dark:bg-neutral-900 border border-neutral-100 dark:border-white/[0.05]">
+                  {askAnswer}
+                </div>
+              )}
             </div>
 
             {/* Bottom action controls */}
