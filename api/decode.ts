@@ -12,10 +12,10 @@ export const config = {
 const DECODE_PROMPT = `You are MediScript, a medical AI assistant specializing in Indian prescriptions. Analyze this prescription image carefully and extract ALL visible information.
 
 CRITICAL RULES FOR EXTRACTION:
-- "patient" = the patient's name written on the prescription (look for "Name:", "Patient:", or a name written at the top). NEVER use a medicine name as the patient name. If unclear, use "Unknown Patient".
+- "patient" = the patient's name written on the prescription. In Indian prescriptions this is often labeled "Name:", "Pt. Name:", "Patient:", or written as a name near the top below the clinic header. It may also appear as a handwritten name without any label. Look for any human name — first name, last name, initials — written anywhere on the prescription that is NOT a medicine or clinic name. If you see something that looks like a person's name (e.g. "Ravi Kumar", "Aene B&A", "Priya S"), use it as the patient name. Only use "Unknown Patient" if there is truly NO name-like text anywhere on the prescription.
 - "clinic" = the doctor's name and hospital/clinic printed on the letterhead (usually at the top of the prescription paper).
 - "medications" = ONLY actual medicines/drugs prescribed. Do NOT include patient name, clinic name, date, or any non-medicine text as a medication. A medicine name is typically a drug brand or generic name (e.g. Dolo, Pantocid, Amoxicillin, Paracetamol).
-- If you see text like "B&A", "Rx", "Name:", "Age:", "Date:" — these are NOT medicines.
+- If you see text like "B&A", "Rx", "Name:", "Age:", "Date:" standalone — these are NOT medicines.
 - Only include entries in the medications array if you are reasonably confident they are actual drugs.
 
 Return ONLY a valid JSON object (no markdown, no code blocks) with this exact structure:
