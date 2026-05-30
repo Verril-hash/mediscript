@@ -212,6 +212,28 @@ export default function App() {
   // Voice readout state
   const [speakingMedId, setSpeakingMedId] = useState<string | null>(null);
 
+  // PWA install banner
+  const [installPrompt, setInstallPrompt] = useState<any>(null);
+  const [showInstallBanner, setShowInstallBanner] = useState(false);
+  const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  const isInStandalone = window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone === true;
+
+  useEffect(() => {
+    if (isInStandalone) return; // already installed
+    if (isIOS) {
+      // Show iOS instructions after 3s
+      const t = setTimeout(() => setShowInstallBanner(true), 3000);
+      return () => clearTimeout(t);
+    }
+    const handler = (e: any) => {
+      e.preventDefault();
+      setInstallPrompt(e);
+      setShowInstallBanner(true);
+    };
+    window.addEventListener('beforeinstallprompt', handler);
+    return () => window.removeEventListener('beforeinstallprompt', handler);
+  }, []);
+
   // Ask AI state
   const [askQuery, setAskQuery] = useState('');
   const [askAnswer, setAskAnswer] = useState<string | null>(null);
@@ -655,6 +677,46 @@ export default function App() {
 
       {/* Single restrained ambient glow */}
       <div className="fixed top-[-15%] left-[50%] -translate-x-1/2 w-[60vw] h-[40vw] bg-[#8E6878]/[0.04] dark:bg-[#8E6878]/[0.03] rounded-full blur-[100px] pointer-events-none z-0" />
+
+      {/* PWA Install Banner */}
+      {showInstallBanner && (
+        <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-[190] w-[92vw] max-w-sm">
+          <div className="bg-white dark:bg-[#1A1A1F] border border-[#8E6878]/20 dark:border-[#8E6878]/15 rounded-2xl shadow-2xl shadow-black/10 p-4 flex items-start gap-3">
+            <img src="/icon-192.png" alt="" className="w-10 h-10 rounded-xl shrink-0" />
+            <div className="flex-1 min-w-0">
+              <p className="text-[13px] font-extrabold text-neutral-800 dark:text-neutral-100">Install MediScript</p>
+              {isIOS ? (
+                <p className="text-[11.5px] text-neutral-500 dark:text-neutral-400 mt-0.5 leading-snug">
+                  Tap <span className="font-bold text-[#8E6878]">Share</span> then <span className="font-bold text-[#8E6878]">"Add to Home Screen"</span> to install this app
+                </p>
+              ) : (
+                <p className="text-[11.5px] text-neutral-500 dark:text-neutral-400 mt-0.5 leading-snug">
+                  Add to your home screen for quick access — works offline too
+                </p>
+              )}
+              {!isIOS && (
+                <button
+                  onClick={async () => {
+                    if (!installPrompt) return;
+                    installPrompt.prompt();
+                    const { outcome } = await installPrompt.userChoice;
+                    if (outcome === 'accepted') setShowInstallBanner(false);
+                  }}
+                  className="mt-2 px-3.5 py-1.5 bg-[#8E6878] text-white text-[11px] font-extrabold rounded-lg uppercase tracking-wider active:scale-95 transition-all"
+                >
+                  Install App
+                </button>
+              )}
+            </div>
+            <button
+              onClick={() => setShowInstallBanner(false)}
+              className="text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 shrink-0 mt-0.5"
+            >
+              <X size={16} />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Toast Notifications */}
       {toastMessage && (
