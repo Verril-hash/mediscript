@@ -242,8 +242,73 @@ export default function App() {
     }
   }, [currentPage, selectedRxId]);
 
-  // Decode file scan pipeline
-  const processDecodedPrescription = (fileName: string) => {
+  // Read a File as a base64 string (data portion only)
+  const readFileAsBase64 = (file: File): Promise<string> =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const result = reader.result as string;
+        resolve(result.split(',')[1]); // strip "data:...;base64," prefix
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+
+  // Real AI decode pipeline — calls /api/decode with the actual image
+  const processRealPrescription = async (file: File) => {
+    setUploadedFileName(file.name);
+    setIsUploading(true);
+    setUploadProgress(0);
+    setUploadStage('uploading');
+
+    try {
+      // Stage 1: read file
+      const base64 = await readFileAsBase64(file);
+      setUploadProgress(30);
+      setUploadStage('decoding');
+
+      // Stage 2: call OpenAI via our serverless API
+      const response = await fetch('/api/decode', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          image: base64,
+          mimeType: file.type || 'image/jpeg',
+          fileName: file.name,
+        }),
+      });
+
+      setUploadProgress(80);
+      setUploadStage('translating');
+
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({ error: 'Request failed' }));
+        throw new Error(err.error || `Server error ${response.status}`);
+      }
+
+      const prescription: Prescription = await response.json();
+      setUploadProgress(100);
+
+      setTimeout(() => {
+        setPrescriptions((prev) => [prescription, ...prev]);
+        setSelectedRxId(prescription.id);
+        setIsUploading(false);
+        setUploadStage('idle');
+        triggerToast('Prescription decoded successfully!', 'success');
+        setCurrentPage('results');
+      }, 400);
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      console.error('Upload error:', message);
+      setIsUploading(false);
+      setUploadStage('idle');
+      setUploadProgress(0);
+      triggerToast(`Could not decode prescription: ${message}`, 'info');
+    }
+  };
+
+  // Demo/camera fallback — runs a simulated decode without a real file
+  const processMockPrescription = (fileName: string) => {
     setUploadedFileName(fileName);
     setIsUploading(true);
     setUploadProgress(0);
@@ -264,7 +329,7 @@ export default function App() {
         clearInterval(interval);
         setUploadProgress(100);
         setTimeout(() => {
-          const newRxId = `rx_scanned_${Math.floor(1000 + Math.random() * 9000)}`;
+          const newRxId = `rx_demo_${Math.floor(1000 + Math.random() * 9000)}`;
           const newRx: Prescription = {
             id: newRxId,
             name: fileName,
@@ -278,36 +343,35 @@ export default function App() {
             },
             medications: [
               {
-                id: 'med_scanned_1',
-                name: 'Limcee 500mg (Vitamin C)',
-                confidence: 96,
+                id: 'med_demo_1',
+                name: 'Azithromycin 500mg (Azithromycin)',
+                confidence: 94,
                 translations: {
                   en: {
-                    purpose: 'Used as a nutritional supplement to boost immunity and skin health.',
-                    dosage: 'Chew 1 tablet daily after lunch.',
-                    duration: 'Take for 15 days.',
-                    sideEffects: ['Mild heartburn (if taken on empty stomach)', 'Diarrhea (only on high overdose)'],
-                    interactionWarning: 'Do not swallow whole. Chew completely before swallowing.'
+                    purpose: 'Antibiotic used to treat bacterial infections including chest infections and throat infections.',
+                    dosage: '1 tablet once daily, preferably at the same time each day.',
+                    duration: 'Take for 3 days (full course).',
+                    sideEffects: ['Nausea', 'Diarrhea', 'Stomach pain'],
+                    interactionWarning: 'Take on an empty stomach or with food if stomach upset occurs. Complete the full course even if you feel better.'
                   },
                   hi: {
-                    purpose: 'रोग प्रतिरोधक क्षमता (इम्युनिटी) बढ़ाने और त्वचा के स्वास्थ्य के लिए पूरक के रूप में।',
-                    dosage: 'रोजाना दोपहर के भोजन के बाद 1 गोली चबाकर लें।',
-                    duration: '15 दिनों तक लें।',
-                    sideEffects: ['सीने में हल्की जलन (यदि खाली पेट लिया जाए)', 'दस्त (केवल अत्यधिक मात्रा में लेने पर)'],
-                    interactionWarning: 'पूरी गोली न निगलें। निगलने से पहले इसे पूरी तरह चबा लें।'
+                    purpose: 'जीवाणु संक्रमणों के इलाज के लिए एंटीबायोटिक, जिसमें छाती और गले के संक्रमण शामिल हैं।',
+                    dosage: 'रोजाना 1 गोली एक ही समय पर लें।',
+                    duration: '3 दिनों तक लें (पूरा कोर्स)।',
+                    sideEffects: ['जी मिचलाना', 'दस्त', 'पेट दर्द'],
+                    interactionWarning: 'खाली पेट या भोजन के साथ लें। बेहतर महसूस होने पर भी पूरा कोर्स पूरा करें।'
                   },
                   kn: {
-                    purpose: 'ರೋಗನಿರೋಧಕ ಶಕ್ತಿ ಮತ್ತು ಚರ್ಮದ ಆರೋಗ್ಯವನ್ನು ಹೆಚ್ಚಿಸಲು ಪೌಷ್ಟಿಕಾಂಶದ ಪೂರಕವಾಗಿ ಬಳಸಲಾಗುತ್ತದೆ.',
-                    dosage: 'ಪ್ರತಿದಿನ ಮಧ್ಯಾಹ್ನ ಊಟದ ನಂತರ 1 ಮಾತ್ರೆ ಅಗಿದು ತಿನ್ನಿ.',
-                    duration: '15 ದಿನಗಳವರೆಗೆ ತೆಗೆದುಕೊಳ್ಳಿ.',
-                    sideEffects: ['ಲಘು ಎದೆಯುರಿ (ಖಾಲಿ ಹೊಟ್ಟೆಯಲ್ಲಿ ತಗೊಂಡರೆ)', 'ಅತಿಸಾರ (ಅತಿಯಾದ ಪ್ರಮಾಣದಲ್ಲಿ ಮಾತ್ರ)'],
-                    interactionWarning: 'ಮಾತ್ರೆಯನ್ನು ಹಾಗೆಯೇ ನುಂಗಬೇಡಿ. ನುಂಗುವ ಮುನ್ನ ಸಂಪೂರ್ಣವಾಗಿ ಜಗಿಯಿರಿ.'
+                    purpose: 'ಎದೆ ಮತ್ತು ಗಂಟಲಿನ ಸೋಂಕು ಸೇರಿದಂತೆ ಬ್ಯಾಕ್ಟೀರಿಯಾ ಸೋಂಕುಗಳ ಚಿಕಿತ್ಸೆಗೆ ಪ್ರತಿಜೈವಿಕ.',
+                    dosage: 'ಪ್ರತಿದಿನ ಒಂದೇ ಸಮಯದಲ್ಲಿ 1 ಮಾತ್ರೆ ತೆಗೆದುಕೊಳ್ಳಿ.',
+                    duration: '3 ದಿನಗಳವರೆಗೆ ತೆಗೆದುಕೊಳ್ಳಿ (ಸಂಪೂರ್ಣ ಕೋರ್ಸ್).',
+                    sideEffects: ['ವಾಕರಿಕೆ', 'ಅತಿಸಾರ', 'ಹೊಟ್ಟೆ ನೋವು'],
+                    interactionWarning: 'ಖಾಲಿ ಹೊಟ್ಟೆಯಲ್ಲಿ ತೆಗೆದುಕೊಳ್ಳಿ. ಉತ್ತಮ ಅನಿಸಿದರೂ ಸಂಪೂರ್ಣ ಕೋರ್ಸ್ ಮುಗಿಸಿ.'
                   }
                 }
               }
             ]
           };
-
           setPrescriptions((prev) => [newRx, ...prev]);
           setSelectedRxId(newRxId);
           setIsUploading(false);
@@ -321,7 +385,7 @@ export default function App() {
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
-      processDecodedPrescription(e.target.files[0].name);
+      processRealPrescription(e.target.files[0]);
     }
   };
 
@@ -338,17 +402,17 @@ export default function App() {
     e.preventDefault();
     setIsDragging(false);
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      processDecodedPrescription(e.dataTransfer.files[0].name);
+      processRealPrescription(e.dataTransfer.files[0]);
     }
   };
 
-  // Simulating Camera Capture
+  // Camera capture — uses demo mode (real camera integration requires native app)
   const triggerCameraShutter = () => {
     setIsShutterFlashing(true);
     setTimeout(() => {
       setIsShutterFlashing(false);
       setShowCameraModal(false);
-      processDecodedPrescription('camera_captured_prescription.jpg');
+      processMockPrescription('camera_captured_prescription.jpg');
     }, 600);
   };
 
