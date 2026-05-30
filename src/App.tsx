@@ -3,7 +3,7 @@ import {
   CheckCircle2, Sparkles, Clock, UploadCloud,
   AlertCircle, Sun, Moon, ArrowUpRight, Camera, Share2,
   User, AlertTriangle, RefreshCw, MousePointer,
-  Shield, Globe, Menu, X
+  Shield, Globe, Menu, X, Volume2, VolumeX
 } from 'lucide-react';
 
 type Page = 'landing' | 'upload' | 'results' | 'features' | 'how-it-works' | 'about';
@@ -195,8 +195,27 @@ export default function App() {
   const [playgroundLanguage, setPlaygroundLanguage] = useState<Language>('en');
   const [expandedFaq, setExpandedFaq] = useState<number | null>(null);
 
-  const [prescriptions, setPrescriptions] = useState<Prescription[]>(SEED_PRESCRIPTIONS);
+  const [prescriptions, setPrescriptions] = useState<Prescription[]>(() => {
+    try {
+      const saved = localStorage.getItem('mediscript_rx');
+      if (saved) {
+        const parsed: Prescription[] = JSON.parse(saved);
+        const savedIds = new Set(parsed.map((p) => p.id));
+        const seedOnly = SEED_PRESCRIPTIONS.filter((p) => !savedIds.has(p.id));
+        return [...parsed, ...seedOnly];
+      }
+    } catch {}
+    return SEED_PRESCRIPTIONS;
+  });
   const [selectedRxId, setSelectedRxId] = useState<string>('rx_pantocid_dol_920');
+
+  // Voice readout state
+  const [speakingMedId, setSpeakingMedId] = useState<string | null>(null);
+
+  // Real camera refs
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const cameraStreamRef = useRef<MediaStream | null>(null);
 
   // Scanning simulation states
   const [isUploading, setIsUploading] = useState<boolean>(false);
@@ -214,6 +233,15 @@ export default function App() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState<boolean>(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Persist prescriptions to localStorage whenever they change
+  useEffect(() => {
+    try {
+      // Only persist AI-decoded ones (skip seed data to avoid bloat)
+      const toSave = prescriptions.filter((p) => !p.id.startsWith('rx_pantocid') && !p.id.startsWith('rx_cough'));
+      localStorage.setItem('mediscript_rx', JSON.stringify(toSave));
+    } catch {}
+  }, [prescriptions]);
 
   // Global toast system
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -307,82 +335,6 @@ export default function App() {
     }
   };
 
-  // Demo/camera fallback — runs a simulated decode without a real file
-  const processMockPrescription = (fileName: string) => {
-    setUploadedFileName(fileName);
-    setIsUploading(true);
-    setUploadProgress(0);
-    setUploadStage('uploading');
-
-    let prog = 0;
-    const interval = setInterval(() => {
-      prog += 5;
-      if (prog <= 35) {
-        setUploadProgress(prog);
-      } else if (prog <= 75) {
-        setUploadStage('decoding');
-        setUploadProgress(prog);
-      } else if (prog < 100) {
-        setUploadStage('translating');
-        setUploadProgress(prog);
-      } else {
-        clearInterval(interval);
-        setUploadProgress(100);
-        setTimeout(() => {
-          const newRxId = `rx_demo_${Math.floor(1000 + Math.random() * 9000)}`;
-          const newRx: Prescription = {
-            id: newRxId,
-            name: fileName,
-            date: 'Just now',
-            patient: 'Rahul Kumar',
-            clinic: 'KIMS Hospital, Hyderabad',
-            interactionAlert: {
-              en: 'No critical drug interactions found. Safe to consume as prescribed.',
-              hi: 'कोई गंभीर दवा परस्पर क्रिया नहीं मिली। निर्देशित अनुसार उपयोग करना सुरक्षित है।',
-              kn: 'ಯಾವುದೇ ಗಂಭೀರ ಔಷಧಗಳ ಪರಸ್ಪರ ಕ್ರಿಯೆ ಕಂಡುಬಂದಿಲ್ಲ. ವೈದ್ಯರು ಸೂಚಿಸಿದಂತೆ ತೆಗೆದುಕೊಳ್ಳುವುದು ಸುರಕ್ಷಿತವಾಗಿದೆ.'
-            },
-            medications: [
-              {
-                id: 'med_demo_1',
-                name: 'Azithromycin 500mg (Azithromycin)',
-                confidence: 94,
-                translations: {
-                  en: {
-                    purpose: 'Antibiotic used to treat bacterial infections including chest infections and throat infections.',
-                    dosage: '1 tablet once daily, preferably at the same time each day.',
-                    duration: 'Take for 3 days (full course).',
-                    sideEffects: ['Nausea', 'Diarrhea', 'Stomach pain'],
-                    interactionWarning: 'Take on an empty stomach or with food if stomach upset occurs. Complete the full course even if you feel better.'
-                  },
-                  hi: {
-                    purpose: 'जीवाणु संक्रमणों के इलाज के लिए एंटीबायोटिक, जिसमें छाती और गले के संक्रमण शामिल हैं।',
-                    dosage: 'रोजाना 1 गोली एक ही समय पर लें।',
-                    duration: '3 दिनों तक लें (पूरा कोर्स)।',
-                    sideEffects: ['जी मिचलाना', 'दस्त', 'पेट दर्द'],
-                    interactionWarning: 'खाली पेट या भोजन के साथ लें। बेहतर महसूस होने पर भी पूरा कोर्स पूरा करें।'
-                  },
-                  kn: {
-                    purpose: 'ಎದೆ ಮತ್ತು ಗಂಟಲಿನ ಸೋಂಕು ಸೇರಿದಂತೆ ಬ್ಯಾಕ್ಟೀರಿಯಾ ಸೋಂಕುಗಳ ಚಿಕಿತ್ಸೆಗೆ ಪ್ರತಿಜೈವಿಕ.',
-                    dosage: 'ಪ್ರತಿದಿನ ಒಂದೇ ಸಮಯದಲ್ಲಿ 1 ಮಾತ್ರೆ ತೆಗೆದುಕೊಳ್ಳಿ.',
-                    duration: '3 ದಿನಗಳವರೆಗೆ ತೆಗೆದುಕೊಳ್ಳಿ (ಸಂಪೂರ್ಣ ಕೋರ್ಸ್).',
-                    sideEffects: ['ವಾಕರಿಕೆ', 'ಅತಿಸಾರ', 'ಹೊಟ್ಟೆ ನೋವು'],
-                    interactionWarning: 'ಖಾಲಿ ಹೊಟ್ಟೆಯಲ್ಲಿ ತೆಗೆದುಕೊಳ್ಳಿ. ಉತ್ತಮ ಅನಿಸಿದರೂ ಸಂಪೂರ್ಣ ಕೋರ್ಸ್ ಮುಗಿಸಿ.'
-                  }
-                }
-              }
-            ]
-          };
-          setPrescriptions((prev) => [newRx, ...prev]);
-          setSelectedRxId(newRxId);
-          setIsUploading(false);
-          setUploadStage('idle');
-          triggerToast('Prescription decoded successfully!', 'success');
-          setCurrentPage('results');
-        }, 500);
-      }
-    }, 100);
-  };
-
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       processRealPrescription(e.target.files[0]);
@@ -406,22 +358,97 @@ export default function App() {
     }
   };
 
-  // Camera capture — uses demo mode (real camera integration requires native app)
-  const triggerCameraShutter = () => {
-    setIsShutterFlashing(true);
-    setTimeout(() => {
-      setIsShutterFlashing(false);
+  // ── Real Camera ──
+  const startCamera = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } },
+      });
+      cameraStreamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+      }
+    } catch {
+      triggerToast('Camera access denied. Please allow camera permission.', 'info');
       setShowCameraModal(false);
-      processMockPrescription('camera_captured_prescription.jpg');
-    }, 600);
+    }
   };
 
-  // Sharing prescription breakdown
+  const stopCamera = () => {
+    if (cameraStreamRef.current) {
+      cameraStreamRef.current.getTracks().forEach((t) => t.stop());
+      cameraStreamRef.current = null;
+    }
+  };
+
+  const captureFromCamera = () => {
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    if (!video || !canvas) return;
+    canvas.width = video.videoWidth || 1280;
+    canvas.height = video.videoHeight || 720;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.drawImage(video, 0, 0);
+    setIsShutterFlashing(true);
+    canvas.toBlob(
+      (blob) => {
+        if (blob) {
+          const file = new File([blob], 'camera_prescription.jpg', { type: 'image/jpeg' });
+          setTimeout(() => {
+            setIsShutterFlashing(false);
+            stopCamera();
+            setShowCameraModal(false);
+            processRealPrescription(file);
+          }, 200);
+        }
+      },
+      'image/jpeg',
+      0.92,
+    );
+  };
+
+  // Start/stop camera stream with modal visibility
+  useEffect(() => {
+    if (showCameraModal) {
+      startCamera();
+    } else {
+      stopCamera();
+    }
+    return () => stopCamera();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showCameraModal]);
+
+  // ── Voice Readout ──
+  const speakMedicine = (med: Medication, lang: Language) => {
+    if (!('speechSynthesis' in window)) {
+      triggerToast('Voice not supported in this browser.', 'info');
+      return;
+    }
+    if (speakingMedId === med.id) {
+      window.speechSynthesis.cancel();
+      setSpeakingMedId(null);
+      return;
+    }
+    window.speechSynthesis.cancel();
+    const t = med.translations[lang];
+    const langCode = lang === 'hi' ? 'hi-IN' : lang === 'kn' ? 'kn-IN' : 'en-IN';
+    const text = `${med.name}. ${t.purpose}. ${t.dosage}. ${t.duration}.`;
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = langCode;
+    utterance.rate = 0.88;
+    utterance.onend = () => setSpeakingMedId(null);
+    utterance.onerror = () => setSpeakingMedId(null);
+    setSpeakingMedId(med.id);
+    window.speechSynthesis.speak(utterance);
+  };
+
+  // WhatsApp share
   const handleShareResult = () => {
     const rx = prescriptions.find((p) => p.id === selectedRxId) || prescriptions[0];
     const lang = activeLanguage;
 
-    let shareText = `📝 *MediScript Decoded Prescription Breakdown*\n`;
+    let shareText = `📝 *MediScript Decoded Prescription*\n`;
     shareText += `🏥 *Clinic:* ${rx.clinic}\n`;
     shareText += `👤 *Patient:* ${rx.patient}\n\n`;
 
@@ -433,10 +460,12 @@ export default function App() {
       shareText += `⏳ *Duration:* ${details.duration}\n\n`;
     });
 
-    shareText += `⚠️ *Disclaimer:* Informational breakdown only. Consult a doctor for medical advice.`;
+    shareText += `⚠️ _Informational only. Consult a doctor for medical advice._\n`;
+    shareText += `\n🔗 Decoded by MediScript`;
 
-    navigator.clipboard.writeText(shareText);
-    triggerToast('Prescription summary copied to clipboard! Ready to share.', 'info');
+    const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(shareText)}`;
+    window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
+    triggerToast('Opening WhatsApp to share breakdown!', 'success');
   };
 
   const activeRx = prescriptions.find((p) => p.id === selectedRxId) || prescriptions[0];
@@ -531,73 +560,53 @@ export default function App() {
       </header>
 
       {/* Camera Capture Simulated Modal View */}
+      {/* Hidden canvas for camera capture */}
+      <canvas ref={canvasRef} className="hidden" />
+
       {showCameraModal && (
-        <div className="fixed inset-0 bg-black/90 backdrop-blur-lg z-[100] flex flex-col items-center justify-center p-4">
-          <div className={`relative bg-neutral-950 border border-white/[0.08] rounded-[2.5rem] overflow-hidden max-w-md w-full aspect-[3/4] flex flex-col justify-between p-6 shadow-2xl ${
-            isShutterFlashing ? 'bg-white duration-100' : 'transition-colors'
+        <div className="fixed inset-0 bg-black/95 backdrop-blur-lg z-[100] flex flex-col items-center justify-center p-4">
+          <div className={`relative bg-black rounded-[2.5rem] overflow-hidden max-w-md w-full aspect-[3/4] flex flex-col justify-between shadow-2xl border border-white/10 ${
+            isShutterFlashing ? 'brightness-[3] duration-75' : 'transition-all'
           }`}>
-            {/* Viewfinder Header */}
-            <div className="flex justify-between items-center text-white relative z-10">
-              <span className="text-[11px] font-extrabold bg-white/10 text-neutral-200 px-3 py-1.5 rounded-full flex items-center gap-1.5 uppercase tracking-widest"><Camera size={12} className="text-[#10B981]" /> Auto-Scan Active</span>
-              <button 
+            {/* Live video feed */}
+            <video
+              ref={videoRef}
+              autoPlay
+              playsInline
+              muted
+              className="absolute inset-0 w-full h-full object-cover"
+            />
+
+            {/* Overlay UI */}
+            <div className="relative z-10 flex justify-between items-center p-5">
+              <span className="text-[11px] font-extrabold bg-black/50 text-neutral-200 px-3 py-1.5 rounded-full flex items-center gap-1.5 uppercase tracking-widest backdrop-blur-md">
+                <Camera size={12} className="text-[#10B981]" /> Live Camera
+              </span>
+              <button
                 onClick={() => setShowCameraModal(false)}
-                className="text-neutral-400 hover:text-white font-extrabold text-[12px] bg-white/5 hover:bg-white/10 px-3.5 py-1.5 rounded-full transition-colors uppercase tracking-wider"
+                className="text-neutral-400 hover:text-white font-extrabold text-[12px] bg-black/50 hover:bg-black/70 px-3.5 py-1.5 rounded-full transition-colors uppercase tracking-wider backdrop-blur-md"
               >
                 Cancel
               </button>
             </div>
 
-            {/* Viewfinder Lens and Guidelines (Faint Paper Slip Mockup in Center) */}
-            <div className="absolute inset-x-6 top-20 bottom-28 bg-[#121214] border border-white/[0.04] rounded-3xl overflow-hidden flex items-center justify-center">
-              {/* Grid-mesh background */}
-              <div className="absolute inset-0 grid-mesh opacity-10" />
-
-              {/* Faint Prescription slip preview inside viewfinder */}
-              <div className="w-56 h-72 bg-[#FAF8F5]/80 dark:bg-[#1C1A17]/80 rounded-xl shadow-lg border border-white/5 p-4 flex flex-col justify-between opacity-35 relative animate-pulse">
-                <div className="border-b border-[#E9E4DC]/60 pb-2">
-                  <div className="text-[7px] font-bold text-neutral-500">DR. VERMA'S CLINIC</div>
-                  <div className="text-[5px] text-neutral-450">NEW DELHI</div>
-                </div>
-                <div className="space-y-2 py-4">
-                  <div className="h-1 bg-neutral-300 rounded w-2/3" />
-                  <div className="h-1 bg-neutral-300 rounded w-1/2" />
-                  <div className="h-1 bg-neutral-300 rounded w-3/4" />
-                </div>
-                <div className="h-1 bg-neutral-200 rounded w-1/3 mx-auto" />
-              </div>
-
-              {/* Target Outline Box */}
-              <div className="absolute w-60 h-80 pointer-events-none flex items-center justify-center">
-                {/* Active Corner brackets in Green */}
-                <div className="absolute top-0 left-0 w-5 h-5 border-t-2 border-l-2 border-[#10B981]" />
-                <div className="absolute top-0 right-0 w-5 h-5 border-t-2 border-r-2 border-[#10B981]" />
-                <div className="absolute bottom-0 left-0 w-5 h-5 border-b-2 border-l-2 border-[#10B981]" />
-                <div className="absolute bottom-0 right-0 w-5 h-5 border-b-2 border-r-2 border-[#10B981]" />
-
-                {/* Center Crosshairs */}
-                <div className="w-4 h-px bg-white/20 absolute" />
-                <div className="h-4 w-px bg-white/20 absolute" />
-
-                {/* Sweeping scanner laser line inside the target box */}
-                <div className="absolute top-0 inset-x-0 h-0.5 bg-gradient-to-r from-transparent via-[#10B981] to-transparent animate-laser shadow-[0_0_10px_#10B981]" />
-              </div>
-
-              {/* Live Guidance status overlay */}
-              <div className="absolute bottom-4 text-center">
-                <span className="text-[10px] font-bold text-neutral-400 bg-black/60 backdrop-blur-md px-3 py-1 rounded-full uppercase tracking-wider">
-                  Hold steady • Align prescription in box
-                </span>
-              </div>
+            {/* Corner brackets */}
+            <div className="absolute inset-x-10 top-20 bottom-28 pointer-events-none">
+              <div className="absolute top-0 left-0 w-6 h-6 border-t-2 border-l-2 border-[#10B981]" />
+              <div className="absolute top-0 right-0 w-6 h-6 border-t-2 border-r-2 border-[#10B981]" />
+              <div className="absolute bottom-0 left-0 w-6 h-6 border-b-2 border-l-2 border-[#10B981]" />
+              <div className="absolute bottom-0 right-0 w-6 h-6 border-b-2 border-r-2 border-[#10B981]" />
+              <div className="absolute inset-x-0 top-1/2 h-0.5 bg-gradient-to-r from-transparent via-[#10B981]/60 to-transparent animate-laser" />
             </div>
 
-            {/* Click/Capture trigger button and shutter instructions */}
-            <div className="w-full flex flex-col items-center justify-center gap-3 relative z-10">
-              <span className="text-[11px] font-extrabold text-[#10B981] uppercase tracking-widest animate-pulse">Ready to Capture</span>
+            {/* Capture button */}
+            <div className="relative z-10 w-full flex flex-col items-center justify-center gap-3 pb-6">
+              <span className="text-[11px] font-extrabold text-[#10B981] uppercase tracking-widest">Align prescription in frame</span>
               <button
-                onClick={triggerCameraShutter}
-                className="w-18 h-18 bg-white border-4 border-neutral-800 rounded-full hover:scale-105 active:scale-95 transition-all flex items-center justify-center shadow-2xl relative"
+                onClick={captureFromCamera}
+                className="w-16 h-16 bg-white border-4 border-neutral-600 rounded-full hover:scale-105 active:scale-95 transition-all flex items-center justify-center shadow-2xl"
               >
-                <div className="w-12 h-12 bg-white rounded-full border border-neutral-205" />
+                <div className="w-10 h-10 bg-white rounded-full border border-neutral-300" />
               </button>
             </div>
           </div>
@@ -1773,9 +1782,22 @@ export default function App() {
                           </h4>
                           <span className="text-[10px] font-extrabold text-neutral-400 uppercase tracking-widest">Decoded Medicine</span>
                         </div>
-                        <span className="text-[10.5px] font-medium text-neutral-400 dark:text-neutral-500 shrink-0">
-                          {med.confidence}% match
-                        </span>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <span className="text-[10.5px] font-medium text-neutral-400 dark:text-neutral-500">
+                            {med.confidence}% match
+                          </span>
+                          <button
+                            onClick={() => speakMedicine(med, activeLanguage)}
+                            title={speakingMedId === med.id ? 'Stop' : 'Listen'}
+                            className={`p-1.5 rounded-full transition-all ${
+                              speakingMedId === med.id
+                                ? 'bg-[#8E6878]/15 text-[#8E6878] animate-pulse'
+                                : 'text-neutral-400 hover:text-[#8E6878] hover:bg-[#8E6878]/10'
+                            }`}
+                          >
+                            {speakingMedId === med.id ? <VolumeX size={14} /> : <Volume2 size={14} />}
+                          </button>
+                        </div>
                       </div>
 
                       <div className="w-12 h-px bg-neutral-100 dark:bg-neutral-800" />
@@ -1840,9 +1862,9 @@ export default function App() {
             <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 pt-6 sm:pt-8 border-t border-black/[0.03] dark:border-white/[0.03]">
               <button
                 onClick={handleShareResult}
-                className="flex-1 bg-[#8E6878] text-white font-extrabold text-[12px] sm:text-[13px] py-3.5 sm:py-4 rounded-full hover:bg-[#6E4F5C] active:scale-95 transition-all shadow-[0_4px_15px_rgba(0,113,227,0.15)] flex items-center justify-center gap-2 uppercase tracking-wider"
+                className="flex-1 bg-[#25D366] text-white font-extrabold text-[12px] sm:text-[13px] py-3.5 sm:py-4 rounded-full hover:bg-[#1DA851] active:scale-95 transition-all shadow-[0_4px_15px_rgba(37,211,102,0.25)] flex items-center justify-center gap-2 uppercase tracking-wider"
               >
-                <Share2 size={15} /> Share Breakdown
+                <Share2 size={15} /> Share on WhatsApp
               </button>
               <button
                 onClick={() => {
