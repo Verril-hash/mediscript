@@ -435,7 +435,25 @@ export default function App() {
     const langCode = lang === 'hi' ? 'hi-IN' : lang === 'kn' ? 'kn-IN' : 'en-IN';
     const text = `${med.name}. ${t.purpose}. ${t.dosage}. ${t.duration}.`;
     const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = langCode;
+
+    // Check if a voice for the requested language is available
+    const voices = window.speechSynthesis.getVoices();
+    const matchedVoice =
+      voices.find((v) => v.lang === langCode) ||
+      voices.find((v) => v.lang.startsWith(lang));
+    if (matchedVoice) {
+      utterance.voice = matchedVoice;
+      utterance.lang = matchedVoice.lang;
+    } else if (lang === 'kn') {
+      // kn-IN voice not installed — fall back to English so audio still plays
+      triggerToast('Kannada voice not found on this device — reading in English.', 'info');
+      const enVoice = voices.find((v) => v.lang === 'en-IN') || voices.find((v) => v.lang.startsWith('en')) || null;
+      if (enVoice) utterance.voice = enVoice;
+      utterance.lang = 'en-IN';
+    } else {
+      utterance.lang = langCode;
+    }
+
     utterance.rate = 0.88;
     utterance.onend = () => setSpeakingMedId(null);
     utterance.onerror = () => setSpeakingMedId(null);
